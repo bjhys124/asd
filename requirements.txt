@@ -1,0 +1,6 @@
+langchain
+llama-index
+PyPDF2
+sentence-transformers
+chromadb
+requests
