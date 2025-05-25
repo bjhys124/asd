@@ -1,60 +1,80 @@
 import streamlit as st
-#from file_parser import parse_text_to_dataframe, parse_csv_to_dataframe
-from tax_calculator import calculate_tax
-from warning_generator import generate_warnings
-from gpt_feedback import get_gpt_feedback
+import openai
+import os
+from dotenv import load_dotenv
 
-# Streamlit UI 설정
-st.title("세무 GPT 챗봇 + 자동 경고 + 세금 계산 + 리포트 저장")
+# 환경변수 로드
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-uploaded_file = st.file_uploader("장부 파일을 업로드하세요 (.txt 또는 .csv)", type=["txt", "csv"])
-question = st.text_input("세무 관련 질문을 입력하세요 (예: 이번 달 지출은 적절한가요?)")
+# GPT 호출 함수
+def ask_gpt(prompt, model="gpt-4", temperature=0.7):
+    response = openai.ChatCompletion.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature
+    )
+    return response.choices[0].message.content.strip()
 
-if uploaded_file:
-    if uploaded_file.type == "text/csv":
-        df = parse_csv_to_dataframe(uploaded_file)
+# STP 분석
+def generate_stp_analysis(company_desc):
+    prompt = f"""
+당신은 마케팅 분석가입니다. 아래는 한 회사의 상황 설명입니다.
+
+"{company_desc}"
+
+이 회사에 대해 STP(Segmentation, Targeting, Positioning) 분석을 해주세요.
+각 항목을 명확하게 구분해서 설명해주세요.
+"""
+    return ask_gpt(prompt)
+
+# 4P 전략 도출
+def generate_4p_plan(stp_analysis):
+    prompt = f"""
+당신은 마케팅 전략 전문가입니다.
+아래는 STP 분석 결과입니다:
+
+{stp_analysis}
+
+이 분석을 기반으로 4P 전략(Product, Price, Place, Promotion)을 구체적으로 작성해주세요.
+"""
+    return ask_gpt(prompt)
+
+# 유통 채널 추천
+def recommend_distribution_channel(four_p_analysis):
+    prompt = f"""
+다음은 한 회사의 4P 마케팅 전략입니다:
+
+{four_p_analysis}
+
+이 전략을 바탕으로 가장 적합한 유통 채널을 하나 추천하고, 이유를 설명해주세요.
+(예: 자사몰, 쿠팡, 네이버 스마트스토어, 백화점, 드럭스토어, 대리점 등)
+"""
+    return ask_gpt(prompt)
+
+
+# Streamlit UI
+st.set_page_config(page_title="STP/4P 마케팅 분석기", layout="wide")
+
+st.title("📊 ChatGPT 기반 마케팅 분석기 (STP → 4P → 유통 채널 추천)")
+
+company_input = st.text_area("💬 회사의 현재 상황을 입력하세요", height=200, placeholder="예: 2030 여성 대상 친환경 화장품을 자사몰 위주로 소량 판매 중이나 최근 매출 감소...")
+
+if st.button("🔍 분석 시작"):
+    if company_input.strip() == "":
+        st.warning("회사 상황을 먼저 입력하세요.")
     else:
-        df = parse_text_to_dataframe(uploaded_file)
+        with st.spinner("STP 분석 중..."):
+            stp_result = generate_stp_analysis(company_input)
+            st.subheader("🧩 STP 분석 결과")
+            st.markdown(stp_result)
 
-    st.subheader("📋 원본 장부 데이터")
-    st.dataframe(df)
+        with st.spinner("4P 전략 도출 중..."):
+            four_p_result = generate_4p_plan(stp_result)
+            st.subheader("📦 4P 전략 결과")
+            st.markdown(four_p_result)
 
-    with st.spinner("📡 GPT 분석 중..."):
-        warnings = generate_warnings(df)
-        summary = df.groupby("분류")["금액"].sum().reset_index()
-        vat, income_tax = calculate_tax(df)
-
-        gpt_feedback = get_gpt_feedback(summary, vat, income_tax)
-
-    # 경고 메시지 출력
-    if warnings:
-        st.subheader("⚠ 자동 경고 메시지")
-        for w in warnings:
-            st.write(w)
-    else:
-        st.success("✅ 위험 경고는 없습니다! 지출이 적절해요.")
-
-    # 세금 계산 결과 출력
-    st.subheader("📊 세금 요약")
-    st.write(f"📌 예상 부가세: 약 {vat:,}원")
-    st.write(f"💰 예상 종합소득세: 약 {income_tax:,}원")
-
-    # GPT 피드백 출력
-    st.subheader("🧠 GPT 세무사 피드백")
-    st.write(gpt_feedback)
-
-    # 세무 관련 질문 응답 처리
-    if question:
-        user_question_prompt = f"사용자 질문: {question}"
-
-        followup_response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "너는 전문 세무사 AI야. 아래 사용자의 질문에 장부 기반으로 정확히 답해줘."},
-                {"role": "user", "content": user_question_prompt}
-            ],
-            temperature=0.5
-        )
-
-        st.subheader("💬 질문에 대한 답변")
-        st.write(followup_response.choices[0].message.content.strip())
+        with st.spinner("유통 채널 추천 중..."):
+            channel_result = recommend_distribution_channel(four_p_result)
+            st.subheader("🚚 추천 유통 채널")
+            st.markdown(channel_result)
